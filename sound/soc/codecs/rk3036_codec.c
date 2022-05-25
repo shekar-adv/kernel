@@ -22,7 +22,7 @@
 #include <linux/of_gpio.h>
 #include <linux/clk.h>
 #include <linux/io.h>
-#include <linux/rockchip/iomap.h>
+#include <linux/mfd/syscon.h>
 #include <linux/rockchip/grf.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
@@ -71,6 +71,8 @@ static struct delayed_work debug_delayed_work;
 
 struct rk3036_codec_priv {
 	void __iomem	*regbase;
+	struct regmap *grf;
+	struct regmap *regmap;
 	struct snd_soc_codec *codec;
 
 	unsigned int stereo_sysclk;
@@ -100,48 +102,14 @@ static const unsigned int rk3036_reg_defaults[RK3036_CODEC_REG28+1] = {
 };
 
 /* function declare: */
-static int rk3036_codec_register(
-	struct snd_soc_codec *codec, unsigned int reg);
-static int rk3036_volatile_register(
-	struct snd_soc_codec *codec, unsigned int reg);
 static int rk3036_set_bias_level(
 	struct snd_soc_codec *codec, enum snd_soc_bias_level level);
-static unsigned int rk3036_codec_read(
-	struct snd_soc_codec *codec, unsigned int reg);
-static inline void rk3036_write_reg_cache(
-	struct snd_soc_codec *codec, unsigned int reg, unsigned int value);
-
-static inline unsigned int rk3036_read_reg_cache(struct snd_soc_codec *
-	codec, unsigned int reg)
-{
-	unsigned int *cache = codec->reg_cache;
-
-	if (rk3036_codec_register(codec, reg))
-		return  cache[reg];
-
-	DBG("%s : reg error!\n", __func__);
-
-	return -EINVAL;
-}
-
-static inline void rk3036_write_reg_cache(struct snd_soc_codec *
-	codec, unsigned int reg, unsigned int value)
-{
-	unsigned int *cache = codec->reg_cache;
-
-	if (rk3036_codec_register(codec, reg)) {
-		cache[reg] = value;
-		return;
-	}
-
-	DBG("%s : reg error!\n", __func__);
-}
 
 static int rk3036_reset(struct snd_soc_codec *codec)
 {
-	writel(0x00, rk3036_priv->regbase+RK3036_CODEC_RESET);
+	regmap_write(rk3036_priv->regmap, RK3036_CODEC_RESET, 0x00);
 	mdelay(10);
-	writel(0x03, rk3036_priv->regbase+RK3036_CODEC_RESET);
+	regmap_write(rk3036_priv->regmap, RK3036_CODEC_RESET, 0x03);
 	mdelay(10);
 	memcpy(codec->reg_cache, rk3036_reg_defaults,
 		sizeof(rk3036_reg_defaults));
@@ -629,68 +597,6 @@ static struct snd_soc_dai_driver rk3036_dai[] = {
 	},
 };
 
-static unsigned int rk3036_codec_read(struct snd_soc_codec *
-	codec, unsigned int reg)
-{
-	unsigned int value;
-
-	if (!rk3036_priv) {
-		DBG("%s : rk3036 is NULL\n", __func__);
-		return -EINVAL;
-	}
-
-	if (!rk3036_codec_register(codec, reg)) {
-		DBG("%s : reg error!\n", __func__);
-		return -EINVAL;
-	}
-
-	value = readl_relaxed(rk3036_priv->regbase+reg);
-	DBG("%s : reg = 0x%x, val= 0x%x\n", __func__, reg, value);
-
-	return value;
-}
-
-static int rk3036_hw_write(const struct i2c_client *
-	client, const char *buf, int count)
-{
-	unsigned int reg, value;
-
-	if (!rk3036_priv || !rk3036_priv->codec)
-		return -EINVAL;
-
-	if (count == 2) {
-		reg = (unsigned int)buf[0];
-		value = (unsigned int)buf[1];
-		writel(value, rk3036_priv->regbase+reg);
-	} else {
-		DBG("%s : i2c len error\n", __func__);
-	}
-
-	return  count;
-}
-
-static int rk3036_codec_write(struct snd_soc_codec *
-	codec, unsigned int reg, unsigned int value)
-{
-	int new_value = -1;
-
-	if (!rk3036_priv) {
-		DBG("%s : rk3036 is NULL\n", __func__);
-		return -EINVAL;
-	} else if (!rk3036_codec_register(codec, reg)) {
-		DBG("%s : reg error!\n", __func__);
-		return -EINVAL;
-	}
-
-	/*new_value = rk3036_set_init_value(codec, reg, value);*/
-	if (new_value == -1) {
-		writel(value, rk3036_priv->regbase+reg);
-		rk3036_write_reg_cache(codec, reg, value);
-	}
-
-	return 0;
-}
-
 static void spk_ctrl_fun(int status)
 {
 	if (rk3036_priv == NULL)
@@ -846,17 +752,8 @@ static int rk3036_probe(struct snd_soc_codec *codec)
 	int ret;
 
 	rk3036_codec->codec = codec;
-
+	snd_soc_codec_force_bias_level(codec, SND_SOC_BIAS_OFF);
 	clk_prepare_enable(rk3036_codec->pclk);
-
-	ret = snd_soc_codec_set_cache_io(codec, 8, 8, SND_SOC_I2C);
-	if (ret != 0)
-		goto err__;
-
-	codec->hw_read = rk3036_codec_read;
-	codec->hw_write = (hw_write_t)rk3036_hw_write;
-	codec->read = rk3036_codec_read;
-	codec->write = rk3036_codec_write;
 
 	INIT_DELAYED_WORK(&rk3036_codec->codec_delayed_work,
 			codec_delayedwork_fun);
@@ -871,8 +768,7 @@ static int rk3036_probe(struct snd_soc_codec *codec)
 	}
 
 	/* config i2s output to acodec module. */
-	val = readl_relaxed(RK_GRF_VIRT + RK3036_GRF_SOC_CON0);
-	writel_relaxed(val | 0x04000400, RK_GRF_VIRT + RK3036_GRF_SOC_CON0);
+	regmap_write(rk3036_codec->grf, RK3036_GRF_SOC_CON0, 0x04000400);
 
 	/* codec reset. */
 	rk3036_reset(codec);
@@ -885,7 +781,6 @@ static int rk3036_probe(struct snd_soc_codec *codec)
 
 	schedule_delayed_work(&rk3036_codec->codec_delayed_work,
 		msecs_to_jiffies(6000));/* codec_delayedwork_fun */
-	codec->dapm.bias_level = SND_SOC_BIAS_PREPARE;
 
 	schedule_delayed_work(&rk3036_codec->spk_ctrl_delayed_work,
 		msecs_to_jiffies(5000));/* spk_ctrl_delayedwork_fun */
@@ -944,22 +839,21 @@ static int rk3036_set_bias_level(struct snd_soc_codec *codec, enum
 	case SND_SOC_BIAS_OFF:
 		break;
 	}
-	codec->dapm.bias_level = level;
+
 	return 0;
 }
 
-static int rk3036_volatile_register(struct snd_soc_codec *
-				codec, unsigned int reg)
+static bool rk3036_volatile_register(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
 	case RK3036_CODEC_RESET:
-		return 1;
+		return true;
 	default:
-		return 0;
+		return false;
 	}
 }
 
-static int rk3036_codec_register(struct snd_soc_codec *codec, unsigned int reg)
+static bool rk3036_codec_register(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
 	case RK3036_CODEC_RESET:
@@ -973,9 +867,9 @@ static int rk3036_codec_register(struct snd_soc_codec *codec, unsigned int reg)
 	case RK3036_CODEC_REG26:
 	case RK3036_CODEC_REG27:
 	case RK3036_CODEC_REG28:
-		return 1;
+		return true;
 	default:
-		return 0;
+		return false;
 	}
 }
 
@@ -988,9 +882,17 @@ static struct snd_soc_codec_driver soc_codec_dev_rk3036 = {
 	.reg_cache_size = ARRAY_SIZE(rk3036_reg_defaults),
 	.reg_word_size = sizeof(unsigned int),
 	.reg_cache_default = rk3036_reg_defaults,
-	.volatile_register = rk3036_volatile_register,
-	.readable_register = rk3036_codec_register,
 	.reg_cache_step = sizeof(unsigned int),
+};
+
+static const struct regmap_config rk3036_codec_regmap_config = {
+	.reg_bits = 32,
+	.reg_stride = 4,
+	.val_bits = 32,
+	.max_register = RK3036_CODEC_REG28,
+	.writeable_reg = rk3036_codec_register,
+	.readable_reg = rk3036_codec_register,
+	.volatile_reg = rk3036_volatile_register,
 };
 
 #ifdef CONFIG_PM
@@ -1063,8 +965,17 @@ static int rk3036_platform_probe(struct platform_device *pdev)
 	rk3036->regbase = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(rk3036->regbase))
 		return PTR_ERR(rk3036->regbase);
+	rk3036->regmap = devm_regmap_init_mmio(&pdev->dev, rk3036->regbase,
+					       &rk3036_codec_regmap_config);
+	if (IS_ERR(rk3036->regmap))
+		return PTR_ERR(rk3036->regmap);
+	rk3036->grf = syscon_regmap_lookup_by_phandle(rk3036_np, "rockchip,grf");
+	if (IS_ERR(rk3036->grf)) {
+		dev_err(&pdev->dev, "needs 'rockchip,grf' property\n");
+		return PTR_ERR(rk3036->grf);
+	}
 
-	rk3036->pclk = devm_clk_get(&pdev->dev, "g_pclk_acodec");
+	rk3036->pclk = devm_clk_get(&pdev->dev, "acodec_pclk");
 	if (IS_ERR(rk3036->pclk)) {
 		dev_err(&pdev->dev, "Unable to get acodec hclk\n");
 		ret = -ENXIO;
@@ -1087,7 +998,7 @@ static int rk3036_platform_remove(struct platform_device *pdev)
 	return 0;
 }
 
-void rk3036_platform_shutdown(struct platform_device *pdev)
+static void rk3036_platform_shutdown(struct platform_device *pdev)
 {
 	if (!rk3036_priv || !rk3036_priv->codec)
 		return;
@@ -1095,9 +1006,9 @@ void rk3036_platform_shutdown(struct platform_device *pdev)
 	spk_ctrl_fun(SPK_CTRL_CLOSE);
 
 	mdelay(10);
-	writel(0xfc, rk3036_priv->regbase + RK3036_CODEC_RESET);
+	regmap_write(rk3036_priv->regmap, RK3036_CODEC_RESET, 0xfc);
 	mdelay(10);
-	writel(0x03, rk3036_priv->regbase + RK3036_CODEC_RESET);
+	regmap_write(rk3036_priv->regmap, RK3036_CODEC_RESET, 0x03);
 }
 
 #ifdef CONFIG_OF
