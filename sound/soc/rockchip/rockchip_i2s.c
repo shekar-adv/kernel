@@ -113,11 +113,31 @@ static void rockchip_i2s_reset(struct rk_i2s_dev *i2s)
 	regcache_sync(i2s->regmap);
 }
 
+static int rockchip_i2s_clear(struct rk_i2s_dev *i2s)
+{
+	unsigned int clr = I2S_CLR_TXC | I2S_CLR_RXC;
+	unsigned int val = 0;
+	int ret;
+
+	regmap_update_bits(i2s->regmap, I2S_CLR, clr, clr);
+
+	ret = regmap_read_poll_timeout_atomic(i2s->regmap, I2S_CLR, val,
+					      !(val & clr), 10, 100);
+	if (ret < 0) {
+		dev_warn(i2s->dev, "fail to clear\n");
+		goto reset;
+	}
+
+	return 0;
+
+reset:
+	rockchip_i2s_reset(i2s);
+
+	return ret;
+}
+
 static void rockchip_snd_txctrl(struct rk_i2s_dev *i2s, int on)
 {
-	unsigned int val = 0;
-	int retry = 10;
-
 	spin_lock(&lock);
 	if (on) {
 		regmap_update_bits(i2s->regmap, I2S_DMACR,
@@ -142,22 +162,7 @@ static void rockchip_snd_txctrl(struct rk_i2s_dev *i2s, int on)
 					   I2S_XFER_RXS_STOP);
 
 			udelay(150);
-			regmap_update_bits(i2s->regmap, I2S_CLR,
-					   I2S_CLR_TXC | I2S_CLR_RXC,
-					   I2S_CLR_TXC | I2S_CLR_RXC);
-
-			regmap_read(i2s->regmap, I2S_CLR, &val);
-
-			/* Should wait for clear operation to finish */
-			while (val) {
-				regmap_read(i2s->regmap, I2S_CLR, &val);
-				retry--;
-				if (!retry) {
-					dev_warn(i2s->dev, "reset\n");
-					rockchip_i2s_reset(i2s);
-					break;
-				}
-			}
+			rockchip_i2s_clear(i2s);
 		}
 	}
 	spin_unlock(&lock);
@@ -165,9 +170,6 @@ static void rockchip_snd_txctrl(struct rk_i2s_dev *i2s, int on)
 
 static void rockchip_snd_rxctrl(struct rk_i2s_dev *i2s, int on)
 {
-	unsigned int val = 0;
-	int retry = 10;
-
 	spin_lock(&lock);
 	if (on) {
 		regmap_update_bits(i2s->regmap, I2S_DMACR,
@@ -192,22 +194,7 @@ static void rockchip_snd_rxctrl(struct rk_i2s_dev *i2s, int on)
 					   I2S_XFER_RXS_STOP);
 
 			udelay(150);
-			regmap_update_bits(i2s->regmap, I2S_CLR,
-					   I2S_CLR_TXC | I2S_CLR_RXC,
-					   I2S_CLR_TXC | I2S_CLR_RXC);
-
-			regmap_read(i2s->regmap, I2S_CLR, &val);
-
-			/* Should wait for clear operation to finish */
-			while (val) {
-				regmap_read(i2s->regmap, I2S_CLR, &val);
-				retry--;
-				if (!retry) {
-					dev_warn(i2s->dev, "reset\n");
-					rockchip_i2s_reset(i2s);
-					break;
-				}
-			}
+			rockchip_i2s_clear(i2s);
 		}
 	}
 	spin_unlock(&lock);
