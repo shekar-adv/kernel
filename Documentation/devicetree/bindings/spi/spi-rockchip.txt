@@ -34,6 +34,7 @@ Optional Properties:
 		Rx data (may need to be fine tuned for high capacitance lines).
 		No delay (0) by default.
 - pinctrl-names: high_speed for speed is higher than 24MHz
+- rockchip,autosuspend-delay-ms: Set pm runtime autosuspend value in milliseconds.
 
 Example:
 
