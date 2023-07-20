@@ -749,7 +749,7 @@ static int rockchip_spi_probe(struct platform_device *pdev)
 	struct rockchip_spi *rs;
 	struct spi_master *master;
 	struct resource *mem;
-	u32 rsd_nsecs;
+	u32 rsd_nsecs, val;
 
 	master = spi_alloc_master(&pdev->dev, sizeof(struct rockchip_spi));
 	if (!master)
@@ -812,6 +812,12 @@ static int rockchip_spi_probe(struct platform_device *pdev)
 	}
 
 	spin_lock_init(&rs->lock);
+
+	of_property_read_u32(pdev->dev.of_node, "rockchip,autosuspend-delay-ms", &val);
+	if (val > 0) {
+		pm_runtime_set_autosuspend_delay(&pdev->dev, val);
+		pm_runtime_use_autosuspend(&pdev->dev);
+	}
 
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
