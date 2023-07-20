@@ -192,7 +192,7 @@ struct rockchip_spi {
 	void *rx;
 	void *rx_end;
 
-	u32 state;
+	atomic_t state;
 	/* protect state */
 	spinlock_t lock;
 
@@ -326,12 +326,12 @@ static void rockchip_spi_handle_err(struct spi_master *master,
 	 * Maybe it is reasonable for error handling here.
 	 */
 	if (rs->use_dma) {
-		if (rs->state & RXBUSY) {
+		if (atomic_read(&rs->state) & RXBUSY) {
 			dmaengine_terminate_async(rs->dma_rx.ch);
 			flush_fifo(rs);
 		}
 
-		if (rs->state & TXBUSY)
+		if (atomic_read(&rs->state) & TXBUSY)
 			dmaengine_terminate_async(rs->dma_tx.ch);
 	}
 
@@ -410,35 +410,39 @@ static void rockchip_spi_dma_rxcb(void *data)
 {
 	unsigned long flags;
 	struct rockchip_spi *rs = data;
+	int state;
 
 	spin_lock_irqsave(&rs->lock, flags);
+	atomic_andnot(RXBUSY, &rs->state);
+	state = atomic_read(&rs->state);
+	spin_unlock_irqrestore(&rs->lock, flags);
 
-	rs->state &= ~RXBUSY;
-	if (!(rs->state & TXBUSY)) {
+	if (!(state & TXBUSY)) {
 		spi_enable_chip(rs, 0);
 		spi_finalize_current_transfer(rs->master);
 	}
-
-	spin_unlock_irqrestore(&rs->lock, flags);
 }
 
 static void rockchip_spi_dma_txcb(void *data)
 {
 	unsigned long flags;
 	struct rockchip_spi *rs = data;
+	int state;
+
+	spin_lock_irqsave(&rs->lock, flags);
+	atomic_andnot(TXBUSY, &rs->state);
+	state = atomic_read(&rs->state);
+	spin_unlock_irqrestore(&rs->lock, flags);
 
 	/* Wait until the FIFO data completely. */
 	wait_for_idle(rs);
 
-	spin_lock_irqsave(&rs->lock, flags);
 
-	rs->state &= ~TXBUSY;
-	if (!(rs->state & RXBUSY)) {
+
+	if (!(state & RXBUSY)) {
 		spi_enable_chip(rs, 0);
 		spi_finalize_current_transfer(rs->master);
 	}
-
-	spin_unlock_irqrestore(&rs->lock, flags);
 }
 
 static u32 rockchip_spi_calc_burst_size(u32 data_len)
@@ -456,24 +460,19 @@ static u32 rockchip_spi_calc_burst_size(u32 data_len)
 
 static int rockchip_spi_prepare_dma(struct rockchip_spi *rs)
 {
-	unsigned long flags;
-	struct dma_slave_config rxconf, txconf;
 	struct dma_async_tx_descriptor *rxdesc, *txdesc;
 
-	memset(&rxconf, 0, sizeof(struct dma_slave_config));
-	memset(&txconf, 0, sizeof(struct dma_slave_config));
-
-	spin_lock_irqsave(&rs->lock, flags);
-	rs->state &= ~RXBUSY;
-	rs->state &= ~TXBUSY;
-	spin_unlock_irqrestore(&rs->lock, flags);
+	atomic_set(&rs->state, 0);
 
 	rxdesc = NULL;
 	if (rs->rx) {
-		rxconf.direction = rs->dma_rx.direction;
-		rxconf.src_addr = rs->dma_rx.addr;
-		rxconf.src_addr_width = rs->n_bytes;
-		rxconf.src_maxburst = rockchip_spi_calc_burst_size(rs->len / rs->n_bytes);
+		struct dma_slave_config rxconf = {
+			.direction = DMA_DEV_TO_MEM,
+			.src_addr = rs->dma_rx.addr,
+			.src_addr_width = rs->n_bytes,
+			.src_maxburst = rockchip_spi_calc_burst_size(rs->len / rs->n_bytes),
+		};
+
 		dmaengine_slave_config(rs->dma_rx.ch, &rxconf);
 
 		rxdesc = dmaengine_prep_slave_sg(
@@ -489,10 +488,13 @@ static int rockchip_spi_prepare_dma(struct rockchip_spi *rs)
 
 	txdesc = NULL;
 	if (rs->tx) {
-		txconf.direction = rs->dma_tx.direction;
-		txconf.dst_addr = rs->dma_tx.addr;
-		txconf.dst_addr_width = rs->n_bytes;
-		txconf.dst_maxburst = 8;
+		struct dma_slave_config txconf = {
+			.direction = DMA_MEM_TO_DEV,
+			.dst_addr = rs->dma_tx.addr,
+			.dst_addr_width = rs->n_bytes,
+			.dst_maxburst = rs->fifo_len / 4,
+		};
+
 		dmaengine_slave_config(rs->dma_tx.ch, &txconf);
 
 		txdesc = dmaengine_prep_slave_sg(
@@ -511,17 +513,13 @@ static int rockchip_spi_prepare_dma(struct rockchip_spi *rs)
 
 	/* rx must be started before tx due to spi instinct */
 	if (rxdesc) {
-		spin_lock_irqsave(&rs->lock, flags);
-		rs->state |= RXBUSY;
-		spin_unlock_irqrestore(&rs->lock, flags);
+		atomic_or(RXBUSY, &rs->state);
 		dmaengine_submit(rxdesc);
 		dma_async_issue_pending(rs->dma_rx.ch);
 	}
 
 	if (txdesc) {
-		spin_lock_irqsave(&rs->lock, flags);
-		rs->state |= TXBUSY;
-		spin_unlock_irqrestore(&rs->lock, flags);
+		atomic_or(TXBUSY, &rs->state);
 		dmaengine_submit(txdesc);
 		dma_async_issue_pending(rs->dma_tx.ch);
 	}
