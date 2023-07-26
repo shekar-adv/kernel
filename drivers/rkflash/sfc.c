@@ -12,6 +12,7 @@
 #define SFC_MAX_IOSIZE_VER4		(0xFFFFFFFF)
 
 static void __iomem *g_sfc_reg;
+static u32 sfc_version;
 
 static void sfc_reset(void)
 {
@@ -65,6 +66,7 @@ int sfc_init(void __iomem *reg_addr)
 
 	if (sfc_get_version() >= SFC_VER_4)
 		writel(1, g_sfc_reg + SFC_LEN_CTRL);
+	sfc_version = sfc_get_version();
 
 	return SFC_OK;
 }
@@ -106,7 +108,7 @@ int sfc_request(struct rk_sfc_op *op, u32 addr, void *data, u32 size)
 	op->sfctrl.d32 |= 0x2;
 	cmd.b.datasize = size;
 
-	if (sfc_get_version() >= SFC_VER_4)
+	if (sfc_version >= SFC_VER_4)
 		writel(size, g_sfc_reg + SFC_LEN_EXT);
 	else
 		cmd.b.datasize = size;
@@ -228,6 +230,8 @@ int sfc_request(struct rk_sfc_op *op, u32 addr, void *data, u32 size)
 					break;
 				}
 
+				if (!bytes)
+					break;
 				sfc_delay(1);
 
 				if (timeout++ > 10000) {
