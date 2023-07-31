@@ -76,6 +76,13 @@ struct uart_8250_ops {
 	void		(*release_irq)(struct uart_8250_port *);
 };
 
+struct uart_8250_em485 {
+	struct hrtimer		start_tx_timer; /* "rs485 start tx" timer */
+	struct hrtimer		stop_tx_timer;  /* "rs485 stop tx" timer */
+	struct hrtimer		*active_timer;  /* pointer to active timer */
+	struct uart_8250_port	*port;          /* for hrtimer callbacks */
+};
+
 /*
  * This should be used by drivers which want to register
  * their own 8250 ports without registering their own
@@ -118,6 +125,8 @@ struct uart_8250_port {
 
 	struct uart_8250_dma	*dma;
 	const struct uart_8250_ops *ops;
+
+	struct uart_8250_em485 *em485;
 
 	/* 8250 specific callbacks */
 	int			(*dl_read)(struct uart_8250_port *);

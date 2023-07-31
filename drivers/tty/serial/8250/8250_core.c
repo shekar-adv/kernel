@@ -998,8 +998,10 @@ int serial8250_register_8250_port(struct uart_8250_port *up)
 		if (uart->port.fifosize && !uart->tx_loadsz)
 			uart->tx_loadsz = uart->port.fifosize;
 
-		if (up->port.dev)
+		if (up->port.dev) {
 			uart->port.dev = up->port.dev;
+			uart_get_rs485_mode(&uart->port);
+		}
 
 		if (skip_txen_test)
 			uart->port.flags |= UPF_NO_TXEN_TEST;

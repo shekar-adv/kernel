@@ -432,6 +432,9 @@ static int dw8250_probe(struct platform_device *pdev)
 	p->serial_in	= dw8250_serial_in;
 	p->serial_out	= dw8250_serial_out;
 	p->set_termios = dw8250_set_termios;
+#if defined(CONFIG_ARCH_ROCKCHIP)
+	p->rs485_config = serial8250_em485_config;
+#endif
 
 	p->membase = devm_ioremap(&pdev->dev, regs->start, resource_size(regs));
 	if (!p->membase)

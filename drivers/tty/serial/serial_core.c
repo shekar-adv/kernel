@@ -26,6 +26,7 @@
 #include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/console.h>
+#include <linux/gpio/consumer.h>
 #include <linux/of.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
@@ -37,6 +38,7 @@
 
 #include <asm/irq.h>
 #include <asm/uaccess.h>
+#include <linux/math64.h>
 
 /*
  * This is used to lock changes in serial line configuration.
@@ -279,6 +281,7 @@ uart_update_timeout(struct uart_port *port, unsigned int cflag,
 		    unsigned int baud)
 {
 	unsigned int bits;
+	u64 frame_time;
 
 	/* byte size and parity */
 	switch (cflag & CSIZE) {
@@ -301,6 +304,8 @@ uart_update_timeout(struct uart_port *port, unsigned int cflag,
 	if (cflag & PARENB)
 		bits++;
 
+	frame_time = (u64)bits * NSEC_PER_SEC;
+
 	/*
 	 * The total number of bits to be transmitted in the fifo.
 	 */
@@ -311,6 +316,7 @@ uart_update_timeout(struct uart_port *port, unsigned int cflag,
 	 * Add .02 seconds of slop
 	 */
 	port->timeout = (HZ * bits) / baud + HZ/50;
+	port->frame_time = div64_ul(frame_time, baud);
 }
 
 EXPORT_SYMBOL(uart_update_timeout);
@@ -2220,8 +2226,12 @@ uart_configure_port(struct uart_driver *drv, struct uart_state *state,
 		 * keep the DTR setting that is set in uart_set_options()
 		 * We probably don't need a spinlock around this, but
 		 */
+
 		spin_lock_irqsave(&port->lock, flags);
-		port->ops->set_mctrl(port, port->mctrl & TIOCM_DTR);
+		if (!(port->rs485.flags & SER_RS485_ENABLED))
+			port->ops->set_mctrl(port, port->mctrl);
+		else
+			port->rs485_config(port, &port->rs485);
 		spin_unlock_irqrestore(&port->lock, flags);
 
 		/*
@@ -2919,6 +2929,57 @@ EXPORT_SYMBOL(uart_suspend_port);
 EXPORT_SYMBOL(uart_resume_port);
 EXPORT_SYMBOL(uart_add_one_port);
 EXPORT_SYMBOL(uart_remove_one_port);
+
+/**
+ * uart_get_rs485_mode() - retrieve rs485 properties for given uart
+ * @dev: uart device
+ * @rs485conf: output parameter
+ *
+ * This function implements the device tree binding described in
+ * Documentation/devicetree/bindings/serial/rs485.txt.
+ */
+void uart_get_rs485_mode(struct uart_port *port)
+{
+	struct serial_rs485 *rs485conf = &port->rs485;
+	struct device *dev = port->dev;
+	u32 rs485_delay[2];
+	int ret;
+
+	ret = device_property_read_u32_array(dev, "rs485-rts-delay",
+					     rs485_delay, 2);
+	if (!ret) {
+		rs485conf->delay_rts_before_send = rs485_delay[0];
+		rs485conf->delay_rts_after_send = rs485_delay[1];
+	} else {
+		rs485conf->delay_rts_before_send = 0;
+		rs485conf->delay_rts_after_send = 0;
+	}
+
+	/*
+	 * Clear full-duplex and enabled flags, set RTS polarity to active high
+	 * to get to a defined state with the following properties:
+	 */
+	rs485conf->flags &= ~(SER_RS485_RX_DURING_TX | SER_RS485_ENABLED |
+			      SER_RS485_RTS_AFTER_SEND);
+	rs485conf->flags |= SER_RS485_RTS_ON_SEND;
+
+	if (device_property_read_bool(dev, "rs485-rx-during-tx"))
+		rs485conf->flags |= SER_RS485_RX_DURING_TX;
+
+	if (device_property_read_bool(dev, "linux,rs485-enabled-at-boot-time"))
+		rs485conf->flags |= SER_RS485_ENABLED;
+
+	if (device_property_read_bool(dev, "rs485-rts-active-low")) {
+		rs485conf->flags &= ~SER_RS485_RTS_ON_SEND;
+		rs485conf->flags |= SER_RS485_RTS_AFTER_SEND;
+	}
+
+	port->rs485_de_gpio = devm_gpiod_get_optional(dev, "rs485-de",
+							GPIOD_OUT_LOW);
+	if (IS_ERR(port->rs485_de_gpio))
+		port->rs485_de_gpio = NULL;
+}
+EXPORT_SYMBOL_GPL(uart_get_rs485_mode);
 
 MODULE_DESCRIPTION("Serial driver core");
 MODULE_LICENSE("GPL");
