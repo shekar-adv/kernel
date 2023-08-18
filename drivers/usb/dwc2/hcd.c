@@ -4448,7 +4448,7 @@ static void _dwc2_hcd_hs_reset_work(struct work_struct *work)
 	struct usb_hub *hub;
 	struct usb_hcd *hcd;
 	u32 hprt0, speed;
-	int i;
+	int linestate, i;
 
 	if (dwc2_is_device_mode(hsotg))
 		return;
@@ -4468,6 +4468,12 @@ static void _dwc2_hcd_hs_reset_work(struct work_struct *work)
 			return;
 	}
 
+	linestate = phy_get_linestate(hsotg->phy);
+	if (!(linestate & 0x3)) {
+		dev_dbg(hsotg->dev, "dwc2 linestate is ok\n");
+		return;
+	}
+
 	pr_warn_once("%s start hs handshake\n", __func__);
 	dwc2_disable_host_interrupts(hsotg);
 
@@ -4478,6 +4484,19 @@ static void _dwc2_hcd_hs_reset_work(struct work_struct *work)
 	/* Force DP high and DM low likes high speed connecting */
 	phy_set_linestate(hsotg->phy, PHY_SET_USB_DP_H_DM_L);
 	usleep_range(10000, 11000);
+
+	/*
+	 * If HPRT is in low speed, clear the HPRT0_PWR to
+	 * recovery the dwc2 controller.
+	 */
+	hprt0 = dwc2_read_hprt0(hsotg);
+	speed = (hprt0 & HPRT0_SPD_MASK) >> HPRT0_SPD_SHIFT;
+	if (speed == HPRT0_SPD_LOW_SPEED) {
+		dev_dbg(hsotg->dev, "hprt0 %08x in low speed\n", hprt0);
+		hprt0 &= ~HPRT0_PWR;
+		dwc2_writel(hprt0, hsotg->regs + HPRT0);
+		usleep_range(10000, 11000);
+	}
 
 	/* Put port in rest */
 	hprt0 = dwc2_read_hprt0(hsotg);
