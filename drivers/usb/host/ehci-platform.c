@@ -218,13 +218,19 @@ static void ehci_hs_reset_work(struct work_struct *work)
 		}
 	}
 
-	pr_warn_once("%s start hs handshake\n", __func__);
-
-	/* Force DP high and DM low */
 	temp = ehci_readl(ehci, status_reg);
 	ehci_dbg(ehci, "before set J_STATE, portsc=0x%08x\n", temp);
 	if (temp & PORT_OWNER)
 		ehci_writel(ehci, temp & ~PORT_OWNER, status_reg);
+	temp = ehci_readl(ehci, status_reg);
+	if (!(temp & (3 << 10))) {
+		ehci_dbg(ehci, "ehci linestate is ok, portsc=0x%08x\n", temp);
+		return;
+	}
+
+	pr_warn_once("%s start hs handshake\n", __func__);
+
+	/* Force DP high and DM low */
 	temp &= ~PORT_TEST(0xf);
 	temp |= PORT_TEST(0x1); /* Test J_STATE */
 	ehci_writel(ehci, temp, status_reg);

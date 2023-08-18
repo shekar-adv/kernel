@@ -623,7 +623,7 @@ static void ehci_check_port_status(struct usb_hcd *hcd)
 
 	temp = ehci_readl(ehci, &ehci->regs->port_status[0]);
 
-	if ((temp & (3 << 10)) != 0) {
+	if (((temp & (3 << 10)) != 0) || (temp & PORT_OWNER)) {
 		rhdev = hcd->self.root_hub;
 		hub = usb_hub_to_struct_hub(rhdev);
 
