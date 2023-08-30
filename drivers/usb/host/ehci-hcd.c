@@ -1162,7 +1162,10 @@ int ehci_resume(struct usb_hcd *hcd, bool force_reset)
 		ehci_writel(ehci, mask, &ehci->regs->intr_enable);
 		ehci_readl(ehci, &ehci->regs->intr_enable);
  skip:
+		/* Re-enable port polling. */
+		set_bit(HCD_FLAG_POLL_RH, &hcd->flags);
 		spin_unlock_irq(&ehci->lock);
+		usb_hcd_poll_rh_status(hcd);
 		return 0;
 	}
 
