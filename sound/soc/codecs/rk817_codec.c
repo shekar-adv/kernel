@@ -999,7 +999,7 @@ static int rk817_hw_params(struct snd_pcm_substream *substream,
 	return 0;
 }
 
-static int rk817_digital_mute(struct snd_soc_dai *dai, int mute)
+static int rk817_digital_mute_dac(struct snd_soc_dai *dai, int mute, int stream)
 {
 	struct snd_soc_codec *codec = dai->codec;
 	struct rk817_codec_priv *rk817 = snd_soc_codec_get_drvdata(codec);
@@ -1014,6 +1014,8 @@ static int rk817_digital_mute(struct snd_soc_dai *dai, int mute)
 				    DACMT_ENABLE, DACMT_ENABLE);
 		rk817_restart_dac_digital_clk(codec);
 	} else {
+		snd_soc_update_bits(codec, RK817_CODEC_DTOP_DIGEN_CLKE,
+				    I2SRX_EN_MASK, I2SRX_EN);
 		snd_soc_update_bits(codec, RK817_CODEC_DDAC_MUTE_MIXCTL,
 				    DACMT_ENABLE, DACMT_DISABLE);
 
@@ -1056,6 +1058,28 @@ static int rk817_digital_mute(struct snd_soc_dai *dai, int mute)
 	}
 
 	return 0;
+}
+
+static int rk817_digital_mute_adc(struct snd_soc_dai *dai, int mute, int stream)
+{
+	struct snd_soc_component *component = dai->component;
+
+	if (mute)
+		snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
+					      I2STX_EN_MASK, I2STX_DIS);
+	else
+		snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
+					      I2STX_EN_MASK, I2STX_EN);
+
+	return 0;
+}
+
+static int rk817_digital_mute(struct snd_soc_dai *dai, int mute, int stream)
+{
+	if (stream == SNDRV_PCM_STREAM_PLAYBACK)
+		return rk817_digital_mute_dac(dai, mute, stream);
+	else
+		return rk817_digital_mute_adc(dai, mute, stream);
 }
 
 #define RK817_PLAYBACK_RATES (SNDRV_PCM_RATE_8000 |\
@@ -1101,7 +1125,7 @@ static struct snd_soc_dai_ops rk817_dai_ops = {
 	.hw_params	= rk817_hw_params,
 	.set_fmt	= rk817_set_dai_fmt,
 	.set_sysclk	= rk817_set_dai_sysclk,
-	.digital_mute	= rk817_digital_mute,
+	.mute_stream	= rk817_digital_mute,
 	.shutdown	= rk817_codec_shutdown,
 };
 
