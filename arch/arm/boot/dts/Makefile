@@ -516,6 +516,8 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3036-echo.dtb \
 	rk3036-evb.dtb \
 	rk3036-kylin.dtb \
+	rk3036s-evb1-ddr3-v10.dtb \
+	rk3036s-evb2-ddr2-v10.dtb \
 	rk3066a-bqcurie2.dtb \
 	rk3066a-marsboard.dtb \
 	rk3066a-rayeager.dtb \
