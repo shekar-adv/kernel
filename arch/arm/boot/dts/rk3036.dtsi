@@ -776,6 +776,19 @@
 		status = "disabled";
 	};
 
+	efuse: efuse@20090000 {
+		compatible = "rockchip,rk3036-efuse";
+		reg = <0x20090000 0x20>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		clocks = <&cru PCLK_EFUSE>;
+		clock-names = "pclk_efuse";
+
+		efuse_id: id@7 {
+			reg = <0x7 0x10>;
+		};
+	};
+
 	pinctrl: pinctrl {
 		compatible = "rockchip,rk3036-pinctrl";
 		rockchip,grf = <&grf>;
