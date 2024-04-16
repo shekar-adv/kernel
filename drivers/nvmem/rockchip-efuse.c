@@ -71,6 +71,8 @@
 #define RK1808_A_MASK		RK3399_A_MASK
 #define RK1808_NBYTES		RK3399_NBYTES
 
+#define RK3036_A_MASK		0xff
+#define RK3036_A_SHIFT		8
 #define RK3128_A_SHIFT		7
 #define RK3288_A_SHIFT		6
 #define RK3288_A_MASK		0x3ff
@@ -216,6 +218,46 @@ out:
 	mutex_unlock(&efuse->mutex);
 
 	return ret;
+}
+
+static int rockchip_rk3036_efuse_read(void *context, unsigned int offset,
+				      void *val, size_t bytes)
+{
+	struct rockchip_efuse_chip *efuse = context;
+	u8 *buf = val;
+	int ret;
+
+	ret = clk_prepare_enable(efuse->clk);
+	if (ret < 0) {
+		dev_err(efuse->dev, "failed to prepare/enable efuse clk\n");
+		return ret;
+	}
+
+	writel(RK3366_RDEN, efuse->base + REG_EFUSE_CTRL);
+	udelay(1);
+	while (bytes--) {
+		writel(readl(efuse->base + REG_EFUSE_CTRL) &
+			     (~(RK3036_A_MASK << RK3036_A_SHIFT)),
+			     efuse->base + REG_EFUSE_CTRL);
+		writel(readl(efuse->base + REG_EFUSE_CTRL) |
+			     ((offset++ & RK3036_A_MASK) << RK3036_A_SHIFT),
+			     efuse->base + REG_EFUSE_CTRL);
+		udelay(1);
+		writel(readl(efuse->base + REG_EFUSE_CTRL) |
+		       RK3366_AEN, efuse->base + REG_EFUSE_CTRL);
+		udelay(1);
+		*buf++ = readb(efuse->base + REG_EFUSE_DOUT);
+		writel(readl(efuse->base + REG_EFUSE_CTRL) &
+		       (~RK3366_AEN), efuse->base + REG_EFUSE_CTRL);
+		udelay(1);
+	}
+
+	writel(readl(efuse->base + REG_EFUSE_CTRL) &
+	       (~RK3366_RDEN), efuse->base + REG_EFUSE_CTRL);
+
+	clk_disable_unprepare(efuse->clk);
+
+	return 0;
 }
 
 static int rockchip_rk3128_efuse_read(void *context, unsigned int offset,
@@ -554,6 +596,10 @@ static const struct of_device_id rockchip_efuse_match[] = {
 	{
 		.compatible = "rockchip,rockchip-efuse",
 		.data = (void *)&rockchip_rk3288_efuse_read,
+	},
+	{
+		.compatible = "rockchip,rk3036-efuse",
+		.data = (void *)&rockchip_rk3036_efuse_read,
 	},
 	{
 		.compatible = "rockchip,rk3066a-efuse",
