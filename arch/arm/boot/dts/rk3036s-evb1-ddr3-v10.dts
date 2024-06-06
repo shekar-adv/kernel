@@ -122,6 +122,10 @@
 
 &hdmi {
 	#sound-dai-cells = <0>;
+	rockchip,phy-table =
+		<74250000  0x1f 0x99>,
+		<165000000 0x4f 0x99>,
+		<000000000 0x00 0x00>;
 	status = "okay";
 };
 
