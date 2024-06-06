@@ -226,10 +226,35 @@ static void inno_hdmi_sys_power(struct inno_hdmi *hdmi, bool enable)
 		hdmi_modb(hdmi, HDMI_SYS_CTRL, m_POWER, v_PWR_OFF);
 }
 
+static struct inno_hdmi_phy_config rk3036_hdmi_phy_config[] = {
+	/* pixelclk pre-emp vlev */
+	{ 74250000,  0x3f, 0xbb },
+	{ 165000000, 0x6f, 0xbb },
+	{ ~0UL,	     0x00, 0x00 }
+};
+
+static struct inno_hdmi_phy_config rk3128_hdmi_phy_config[] = {
+	/* pixelclk pre-emp vlev */
+	{ 74250000,  0x3f, 0xaa },
+	{ 165000000, 0x5f, 0xaa },
+	{ ~0UL,	     0x00, 0x00 }
+};
+
+static struct inno_hdmi_phy_config inno_dts_hdmi_phy_config[] = {
+	/* pixelclk pre-emp vlev */
+	{ ~0UL, 0x00, 0x00 },
+	{ ~0UL, 0x00, 0x00 },
+	{ ~0UL, 0x00, 0x00 }
+};
+
 static void inno_hdmi_set_pwr_mode(struct inno_hdmi *hdmi, int mode)
 {
-	const struct inno_hdmi_phy_config *phy_config =
-						hdmi->plat_data->phy_config;
+	struct inno_hdmi_phy_config *phy_config;
+
+	if (inno_dts_hdmi_phy_config[0].mpixelclock != ~0UL)
+		phy_config = inno_dts_hdmi_phy_config;
+	else
+		phy_config = hdmi->plat_data->phy_config;
 
 	switch (mode) {
 	case NORMAL:
@@ -1113,20 +1138,6 @@ static struct i2c_adapter *inno_hdmi_i2c_adapter(struct inno_hdmi *hdmi)
 	return adap;
 }
 
-static struct inno_hdmi_phy_config rk3036_hdmi_phy_config[] = {
-	/* pixelclk pre-emp vlev */
-	{ 74250000,  0x3f, 0xbb },
-	{ 165000000, 0x6f, 0xbb },
-	{ ~0UL,	     0x00, 0x00 }
-};
-
-static struct inno_hdmi_phy_config rk3128_hdmi_phy_config[] = {
-	/* pixelclk pre-emp vlev */
-	{ 74250000,  0x3f, 0xaa },
-	{ 165000000, 0x5f, 0xaa },
-	{ ~0UL,	     0x00, 0x00 }
-};
-
 static const struct inno_hdmi_plat_data rk3036_hdmi_drv_data = {
 	.dev_type   = RK3036_HDMI,
 	.phy_config = rk3036_hdmi_phy_config,
@@ -1148,6 +1159,29 @@ static const struct of_device_id inno_hdmi_dt_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, inno_hdmi_dt_ids);
 
+static int rockchip_inno_hdmi_update_phy_table(struct inno_hdmi *hdmi,
+					       u32 *config,
+					       u8 phy_table_size)
+{
+	int i;
+
+	if (phy_table_size > ARRAY_SIZE(inno_dts_hdmi_phy_config)) {
+		dev_err(hdmi->dev, "phy table array number is out of range\n");
+		return -E2BIG;
+	}
+
+	for (i = 0; i < phy_table_size; i++) {
+		if (config[i * 3] != 0)
+			inno_dts_hdmi_phy_config[i].mpixelclock = (u64)config[i * 3];
+		else
+			inno_dts_hdmi_phy_config[i].mpixelclock = ~0UL;
+		inno_dts_hdmi_phy_config[i].pre_emphasis = (u8)config[i * 3 + 1];
+		inno_dts_hdmi_phy_config[i].vlev_ctr = (u8)config[i * 3 + 2];
+	}
+
+	return 0;
+}
+
 static int inno_hdmi_bind(struct device *dev, struct device *master,
 				 void *data)
 {
@@ -1156,8 +1190,11 @@ static int inno_hdmi_bind(struct device *dev, struct device *master,
 	const struct of_device_id *match;
 	struct inno_hdmi *hdmi;
 	struct resource *iores;
+	u32 *phy_config;
 	int irq;
 	int ret;
+	int val;
+	u8 phy_table_size;
 
 	hdmi = devm_kzalloc(dev, sizeof(*hdmi), GFP_KERNEL);
 	if (!hdmi)
@@ -1248,6 +1285,28 @@ static int inno_hdmi_bind(struct device *dev, struct device *master,
 		dev_err(hdmi->dev,
 			"failed to request hdmi irq: %d\n", ret);
 		goto err_disable_pclk;
+	}
+
+	if (of_get_property(pdev->dev.of_node, "rockchip,phy-table", &val)) {
+		phy_config = kmalloc(val, GFP_KERNEL);
+		if (!phy_config) {
+			/* use default table when kmalloc failed. */
+			dev_err(hdmi->dev, "kmalloc phy table failed\n");
+			ret = -ENOMEM;
+			goto err_disable_pclk;
+		}
+		phy_table_size = val / 12;
+		of_property_read_u32_array(pdev->dev.of_node, "rockchip,phy-table",
+					   phy_config, val / sizeof(u32));
+		ret = rockchip_inno_hdmi_update_phy_table(hdmi, phy_config,
+							  phy_table_size);
+		if (ret) {
+			kfree(phy_config);
+			goto err_disable_pclk;
+		}
+		kfree(phy_config);
+	} else {
+		dev_dbg(hdmi->dev, "use default hdmi phy table\n");
 	}
 
 	return 0;
