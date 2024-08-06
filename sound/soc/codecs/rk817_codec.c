@@ -882,12 +882,19 @@ static int rk817_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 {
 	struct snd_soc_codec *codec = codec_dai->codec;
 	struct rk817_codec_priv *rk817 = snd_soc_codec_get_drvdata(codec);
+	unsigned int ret = 0;
 
+	ret = clk_set_rate(rk817->mclk, freq);
+	if (ret) {
+		dev_warn(codec->dev, "%s %d clk_set_rate %d failed\n",
+			 __func__, __LINE__, freq);
+		return ret;
+	}
 	rk817->stereo_sysclk = freq;
 
 	DBG("%s : MCLK = %dHz\n", __func__, rk817->stereo_sysclk);
 
-	return 0;
+	return ret;
 }
 
 static int rk817_set_dai_fmt(struct snd_soc_dai *codec_dai,
