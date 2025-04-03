@@ -113,6 +113,7 @@ CONFIG_DMA_DIRECT=y
 # Enable specific Rockchip DMA options (if applicable)
 CONFIG_ROCKCHIP_DMA=y
 CONFIG_ROCKCHIP_DRM_DMA=y
+CONFIG_ROCKCHIP_RGA=y
 
 # Ensure proper support for `dma-buf` buffer management
 CONFIG_DMA_BUF=y
