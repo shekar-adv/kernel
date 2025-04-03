@@ -507,13 +507,17 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 		    struct ww_acquire_ctx *ww_ctx, const bool use_ww_ctx)
 {
 	struct task_struct *task = current;
-	struct mutex_waiter waiter;
+	struct mutex_waiter *waiter;
+	waiter = kmalloc(sizeof(*waiter), GFP_KERNEL);
+	if (!waiter)
+	    return -ENOMEM;  // Handle allocation failure
 	unsigned long flags;
 	int ret;
 
 	if (use_ww_ctx) {
 		struct ww_mutex *ww = container_of(lock, struct ww_mutex, base);
 		if (unlikely(ww_ctx == READ_ONCE(ww->ctx)))
+			kfree(waiter);
 			return -EALREADY;
 	}
 
@@ -523,6 +527,7 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	if (mutex_optimistic_spin(lock, ww_ctx, use_ww_ctx)) {
 		/* got the lock, yay! */
 		preempt_enable();
+		kfree(waiter);
 		return 0;
 	}
 
@@ -602,6 +607,7 @@ skip_wait:
 
 	spin_unlock_mutex(&lock->wait_lock, flags);
 	preempt_enable();
+	kfree(waiter);
 	return 0;
 
 err:
@@ -610,6 +616,7 @@ err:
 	debug_mutex_free_waiter(&waiter);
 	mutex_release(&lock->dep_map, 1, ip);
 	preempt_enable();
+	kfree(waiter);
 	return ret;
 }
 
