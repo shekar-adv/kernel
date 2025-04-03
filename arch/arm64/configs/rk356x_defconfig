@@ -68,3 +68,6 @@ CONFIG_NETFILTER_XT_MATCH_IPVS=y
 
 # Generic defconfig
 CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw"
+
+CONFIG_DMA_BUF=y
+CONFIG_DMA_SHARED_BUFFER=y
