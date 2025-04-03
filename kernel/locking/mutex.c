@@ -509,12 +509,17 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 {
 	struct task_struct *task = current;
 	struct mutex_waiter *waiter;
-	waiter = kmalloc(sizeof(*waiter), GFP_KERNEL);
-	if (!waiter)
-	    return -ENOMEM;  // Handle allocation failure
-
 	unsigned long flags;
 	int ret;
+	
+	waiter = kmalloc(sizeof(*waiter), GFP_KERNEL);
+	if (!waiter)
+	    return -ENOMEM;
+	
+	if (unlikely(ww_ctx == READ_ONCE(ww->ctx))) {
+	    kfree(waiter);
+	    return -EALREADY;
+	}
 
 	if (use_ww_ctx) {
 		struct ww_mutex *ww = container_of(lock, struct ww_mutex, base);
@@ -591,11 +596,11 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	}
 	__set_task_state(task, TASK_RUNNING);
 
-	mutex_remove_waiter(lock, &waiter, task);
+	mutex_remove_waiter(lock, waiter, task);
 	/* set it to 0 if there are no waiters left: */
 	if (likely(list_empty(&lock->wait_list)))
 		atomic_set(&lock->count, 0);
-	debug_mutex_free_waiter(&waiter);
+	debug_mutex_free_waiter(waiter);
 
 skip_wait:
 	/* got the lock - cleanup and rejoice! */
@@ -613,9 +618,9 @@ skip_wait:
 	return 0;
 
 err:
-	mutex_remove_waiter(lock, &waiter, task);
+	mutex_remove_waiter(lock, waiter, task);
 	spin_unlock_mutex(&lock->wait_lock, flags);
-	debug_mutex_free_waiter(&waiter);
+	debug_mutex_free_waiter(waiter);
 	mutex_release(&lock->dep_map, 1, ip);
 	preempt_enable();
 	kfree(waiter);
