@@ -44,7 +44,7 @@
 #include <linux/wakelock.h>
 #include <linux/version.h>
 #include <linux/debugfs.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if(0)// (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 #include <linux/dma-buf.h>
 #include <linux/pm_runtime.h>
 #endif
@@ -509,7 +509,7 @@ static void rga_dump(void)
 
 static inline void rga_queue_power_off_work(void)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if (0)//(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 	queue_delayed_work(system_wq, &rga_drvdata->power_off_work, RGA_POWER_OFF_DELAY);
 #else
 	queue_delayed_work(system_nrt_wq, &rga_drvdata->power_off_work, RGA_POWER_OFF_DELAY);
@@ -530,7 +530,7 @@ static void rga_power_on(void)
 	if (rga_service.enable)
 		return;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if(0)// (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 	clk_prepare_enable(rga_drvdata->aclk_rga);
 	clk_prepare_enable(rga_drvdata->hclk_rga);
 	pm_runtime_get_sync(rga_drvdata->dev);
@@ -562,7 +562,7 @@ static void rga_power_off(void)
 		rga_dump();
 	}
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if (0)//(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 	pm_runtime_put(rga_drvdata->dev);
 	clk_disable_unprepare(rga_drvdata->aclk_rga);
 	clk_disable_unprepare(rga_drvdata->hclk_rga);
@@ -758,7 +758,7 @@ static struct rga_reg * rga_reg_init(rga_session *session, struct rga_req *req)
         }
         return NULL;
     }
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if (0)// (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 	reg->sg_src = req->sg_src;
 	reg->sg_dst = req->sg_dst;
 	reg->attach_src = req->attach_src;
@@ -876,7 +876,7 @@ static void rga_try_set_reg(void)
     }
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if (0)//(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 static int rga_put_dma_buf(struct rga_req *req, struct rga_reg *reg)
 {
 	struct dma_buf_attachment *attach = NULL;
@@ -925,7 +925,7 @@ static void rga_del_running_list(void)
             else
                 rga_mmu_buf.back += reg->MMU_len;
         }
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if (0)//(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 		rga_put_dma_buf(NULL, reg);
 #endif
 
@@ -958,7 +958,7 @@ static void rga_del_running_list_timeout(void)
             else
                 rga_mmu_buf.back += reg->MMU_len;
         }
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if (0)//(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 		rga_put_dma_buf(NULL, reg);
 #endif
         atomic_sub(1, &reg->session->task_running);
@@ -994,7 +994,7 @@ static void rga_del_running_list_timeout(void)
     }
 }
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
+#if (1)//(LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
 static int rga_convert_dma_buf(struct rga_req *req)
 {
 	struct ion_handle *hdl;
@@ -1100,7 +1100,7 @@ static int rga_convert_dma_buf(struct rga_req *req)
 }
 #endif
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if(0)// (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 static int rga_get_img_info(rga_img_info_t *img,
 			     u8 mmu_flag,
 			     struct sg_table **psgt,
@@ -1278,7 +1278,7 @@ static struct rga_reg *rga_reg_init_2(rga_session *session, struct rga_req *req0
 		}
 		RGA_gen_reg_info(req1, (uint8_t *)reg1->cmd_reg);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if (0)//(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 		reg1->sg_src = req1->sg_src;
 		reg1->sg_dst = req1->sg_dst;
 		reg1->attach_src = req1->attach_src;
@@ -1302,7 +1302,7 @@ static struct rga_reg *rga_reg_init_2(rga_session *session, struct rga_req *req0
 		kfree(reg1);
 	return NULL;
 }
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
+#if(1)// (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
 static void rga_mem_addr_sel(struct rga_req *req)
 {
 	switch (req->src.format) {
@@ -1335,7 +1335,7 @@ static void rga_mem_addr_sel(struct rga_req *req)
 	}
 }
 #endif
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if (0)//(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 static int rga_blit(rga_session *session, struct rga_req *req)
 {
 	int ret = -1;
@@ -1829,7 +1829,7 @@ static int rga_drv_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&data->power_off_work, rga_power_off_work);
 	wake_lock_init(&data->wake_lock, WAKE_LOCK_SUSPEND, "rga");
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
+#if (1)//(LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
 	data->pd_rga = devm_clk_get(&pdev->dev, "pd_rga");
 	if (IS_ERR(data->pd_rga)) {
 		dev_err(&pdev->dev, "Failed to get rga power domain");
@@ -1886,7 +1886,7 @@ static int rga_drv_probe(struct platform_device *pdev)
 		goto err_misc_register;
 	}
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if(0)// (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 	pm_runtime_enable(&pdev->dev);
 #endif
 
@@ -1915,7 +1915,7 @@ static int rga_drv_remove(struct platform_device *pdev)
 	free_irq(data->irq, &data->miscdev);
 	iounmap((void __iomem *)(data->rga_base));
 	kfree(data->version);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if(0)// (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 	devm_clk_put(&pdev->dev, data->aclk_rga);
 	devm_clk_put(&pdev->dev, data->hclk_rga);
 	pm_runtime_disable(&pdev->dev);
@@ -2049,7 +2049,7 @@ static void rga_debugfs_add(void)
 	}
 }
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
+#if (1)//(LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
 void rga_slt(void)
 {
 	struct rga_req req;
@@ -2549,7 +2549,7 @@ void rga_test_0(void)
 }
 
 #endif
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 1, 0))
+#if(0)// (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 1, 0))
 fs_initcall(rga_init);
 #else
 module_init(rga_init);
