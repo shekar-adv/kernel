@@ -26,6 +26,7 @@
 #include <linux/interrupt.h>
 #include <linux/debug_locks.h>
 #include <linux/osq_lock.h>
+#include <linux/slab.h>  // Required for kmalloc() and kfree()
 
 /*
  * In the DEBUG case we are using the "NULL fastpath" for mutexes,
@@ -511,6 +512,7 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	waiter = kmalloc(sizeof(*waiter), GFP_KERNEL);
 	if (!waiter)
 	    return -ENOMEM;  // Handle allocation failure
+
 	unsigned long flags;
 	int ret;
 
@@ -541,12 +543,12 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	    (atomic_xchg_acquire(&lock->count, 0) == 1))
 		goto skip_wait;
 
-	debug_mutex_lock_common(lock, &waiter);
-	debug_mutex_add_waiter(lock, &waiter, task);
+	debug_mutex_lock_common(lock, waiter);
+	debug_mutex_add_waiter(lock, waiter, task);
 
 	/* add waiting tasks to the end of the waitqueue (FIFO): */
-	list_add_tail(&waiter.list, &lock->wait_list);
-	waiter.task = task;
+	list_add_tail(&waiter->list, &lock->wait_list);
+	waiter->task = task;
 
 	lock_contended(&lock->dep_map, ip);
 
