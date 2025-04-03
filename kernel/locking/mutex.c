@@ -520,8 +520,10 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	if (use_ww_ctx) {
 		struct ww_mutex *ww = container_of(lock, struct ww_mutex, base);
 		if (unlikely(ww_ctx == READ_ONCE(ww->ctx)))
+		{
 			kfree(waiter);
 			return -EALREADY;
+		}
 	}
 
 	preempt_disable();
